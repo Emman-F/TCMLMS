@@ -79,8 +79,13 @@ async function saveAdminChangePassword(){
   showToast('Password updated.');
 }
 function adminDashboard(){
-  const instructors = DB.users.filter(u=>u.role==='instructor');
-  const students = DB.users.filter(u=>u.role==='student');
+  if(supabaseAccountsCache===null){
+    loadAccountsFromServer();
+    return `<div class="card card-pad">${emptyState('layers','Loading dashboard…','Fetching the latest account data from the server.')}</div>`;
+  }
+  const allAccounts = supabaseAccountsCache;
+  const instructors = allAccounts.filter(u=>u.role==='instructor');
+  const students = allAccounts.filter(u=>u.role==='student');
   const unassignedStudents = students.filter(s=>!s.sectionId);
   const emptySections = DB.sections.filter(sec=> !DB.subjects.some(sub=>sub.sectionId===sec.id));
   const needsGradingCount = DB.submissions.filter(s=>{
