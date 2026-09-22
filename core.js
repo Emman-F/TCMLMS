@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-10';
+const BUILD_VERSION = '2026.09.18-11';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -378,12 +378,34 @@ async function doLogin(ev){
   const u = document.getElementById('login-user').value.trim();
   const p = document.getElementById('login-pass').value;
   const err = document.getElementById('login-err');
-  const candidate = DB.users.find(x=>x.schoolId.toLowerCase()===u.toLowerCase());
-  const hash = candidate ? await hashPassword(p, candidate.salt) : null;
-  const found = (candidate && hash===candidate.passwordHash) ? candidate : null;
-  if(!found){ err.style.display='block'; err.textContent='Incorrect school ID or password.'; return; }
-  session = found;
-  view = found.role==='admin' ? 'admin-dashboard' : found.role==='instructor' ? 'ins-dashboard' : 'stu-dashboard';
+  const btn = document.getElementById('login-submit-btn');
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  let data;
+  try{
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({schoolId: u, password: p}),
+    });
+    data = await resp.json();
+    if(!resp.ok){
+      err.style.display = 'block';
+      err.textContent = data.error || 'Incorrect school ID or password.';
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      return;
+    }
+  } catch(e){
+    err.style.display = 'block';
+    err.textContent = 'Could not reach the server. Check your connection and try again.';
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+    return;
+  }
+  session = data.user;
+  view = session.role==='admin' ? 'admin-dashboard' : session.role==='instructor' ? 'ins-dashboard' : 'stu-dashboard';
   params = {};
   renderApp();
 }
@@ -446,7 +468,7 @@ function renderLogin(){
             <div class="form-group"><label>School ID</label><input class="input" id="login-user" autocomplete="username" inputmode="numeric" placeholder="e.g. 20223059" required></div>
             <div class="form-group"><label>Password</label><input class="input" id="login-pass" type="password" autocomplete="current-password" required></div>
             <div id="login-err" style="display:none;color:#c34b40;font-size:12.5px;margin-bottom:10px;font-weight:600;"></div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px;" type="submit">Sign in</button>
+            <button class="btn btn-primary" id="login-submit-btn" style="width:100%;justify-content:center;padding:11px;" type="submit">Sign in</button>
           </form>
         </div>
       </div>
