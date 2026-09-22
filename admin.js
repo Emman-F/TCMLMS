@@ -30,6 +30,54 @@ function loadAccountsFromServer(){
       renderApp();
     });
 }
+function openAdminChangePasswordModal(){
+  openModal(`
+  <div class="modal">
+    <div class="modal-head"><h3>Change password</h3><button class="modal-close" onclick="closeModal()" aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Current password</label><input class="input" type="password" id="cp-current" autocomplete="current-password"></div>
+      <div class="form-group"><label>New password</label><input class="input" type="password" id="cp-new" autocomplete="new-password"></div>
+      <div class="form-group"><label>Confirm new password</label><input class="input" type="password" id="cp-confirm" autocomplete="new-password"></div>
+      <div id="cp-err" class="hint" style="color:var(--rose);display:none;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="cp-save-btn" onclick="saveAdminChangePassword()">${icon('save')} Update password</button></div>
+  </div>`);
+}
+async function saveAdminChangePassword(){
+  const current = document.getElementById('cp-current').value;
+  const next = document.getElementById('cp-new').value;
+  const confirmVal = document.getElementById('cp-confirm').value;
+  const errEl = document.getElementById('cp-err');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+  if(!current || !next || !confirmVal){ showErr('Please fill in all three fields.'); return; }
+  if(next !== confirmVal){ showErr('New password and confirmation don\'t match.'); return; }
+
+  const btn = document.getElementById('cp-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Updating…';
+  let data;
+  try{
+    const resp = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({userId: session.id, currentPassword: current, newPassword: next}),
+    });
+    data = await resp.json();
+    if(!resp.ok){
+      showErr(data.error || 'Could not update your password.');
+      btn.disabled = false;
+      btn.textContent = 'Update password';
+      return;
+    }
+  } catch(e){
+    showErr('Could not reach the server. Check your connection and try again.');
+    btn.disabled = false;
+    btn.textContent = 'Update password';
+    return;
+  }
+  closeModal();
+  showToast('Password updated.');
+}
 function adminDashboard(){
   const instructors = DB.users.filter(u=>u.role==='instructor');
   const students = DB.users.filter(u=>u.role==='student');
