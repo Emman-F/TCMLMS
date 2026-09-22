@@ -379,8 +379,9 @@ async function saveEditAccount(id){
   }
   await persist('users'); closeModal(); showToast('Account updated.'); renderApp();
 }
-function deleteAccount(id){
+async function deleteAccount(id){
   const u = userById(id);
+  if(!u){ showToast('Could not find that account. Try refreshing the page.','err'); return; }
   let msg = `Remove ${u.name}'s account?`;
   if(u.role==='student'){
     const subCount = DB.submissions.filter(s=>s.studentId===id).length;
@@ -396,7 +397,22 @@ function deleteAccount(id){
   }
   msg += ` This can't be undone.`;
   if(!confirm(msg)) return;
-  DB.users = DB.users.filter(x=>x.id!==id);
+
+  let data;
+  try{
+    const resp = await fetch('/api/accounts/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: [id]}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showToast(data.error || 'Could not remove the account.', 'err'); return; }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.', 'err');
+    return;
+  }
+
+  DB.users = DB.users.filter(x=>x.id!==id); // harmless if it was never local to begin with
   selectedAccountIds.delete(id);
   if(u.role==='student'){
     DB.submissions = DB.submissions.filter(s=>s.studentId!==id);
@@ -405,6 +421,7 @@ function deleteAccount(id){
   } else {
     persist('users');
   }
+  supabaseAccountsCache = null; // force a fresh fetch so the account actually disappears from the list
   showToast('Account removed.'); renderApp();
 }
 async function deleteSelectedAccounts(){
@@ -430,17 +447,41 @@ async function deleteSelectedAccounts(){
       ${skipped.length ? `<div class="hint" style="color:var(--rose);">${skipped.length} non-student account${skipped.length===1?'':'s'} in your selection (${skipped.map(u=>esc(u.name)).join(', ')}) will be skipped — remove instructor accounts one at a time.</div>` : ''}
       <p style="font-size:12.8px;font-weight:700;color:var(--rose);margin-top:14px;">This can't be undone.</p>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" style="background:var(--rose);" onclick="confirmDeleteSelectedAccounts()">${icon('trash')} Remove ${students.length} student${students.length===1?'':'s'}</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="confirm-delete-btn" style="background:var(--rose);" onclick="confirmDeleteSelectedAccounts()">${icon('trash')} Remove ${students.length} student${students.length===1?'':'s'}</button></div>
   </div>`);
 }
-function confirmDeleteSelectedAccounts(){
+async function confirmDeleteSelectedAccounts(){
   const ids = [...selectedAccountIds];
   const students = ids.map(userById).filter(u=>u && u.role==='student');
   const studentIds = students.map(u=>u.id);
+  if(!studentIds.length){ closeModal(); return; }
+
+  const btn = document.getElementById('confirm-delete-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Removing…'; }
+  let data;
+  try{
+    const resp = await fetch('/api/accounts/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ids: studentIds}),
+    });
+    data = await resp.json();
+    if(!resp.ok){
+      showToast(data.error || 'Could not remove the selected students.', 'err');
+      if(btn){ btn.disabled = false; btn.textContent = `Remove ${students.length} student${students.length===1?'':'s'}`; }
+      return;
+    }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.', 'err');
+    if(btn){ btn.disabled = false; btn.textContent = `Remove ${students.length} student${students.length===1?'':'s'}`; }
+    return;
+  }
+
   DB.users = DB.users.filter(u=>!studentIds.includes(u.id));
   DB.submissions = DB.submissions.filter(s=>!studentIds.includes(s.studentId));
   DB.attendance = DB.attendance.filter(a=>!studentIds.includes(a.studentId));
   studentIds.forEach(id=>selectedAccountIds.delete(id));
+  supabaseAccountsCache = null; // force a fresh fetch so removed students actually disappear
   Promise.all(['users','submissions','attendance'].map(persist)).then(()=>{
     closeModal();
     showToast(`${students.length} student${students.length===1?'':'s'} removed.`);
