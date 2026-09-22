@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-12';
+const BUILD_VERSION = '2026.09.18-13';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -580,6 +580,7 @@ function renderShell(){
           <div><div class="user-name">${esc(session.name)}</div><div class="user-role">${session.role}</div></div>
         </div>
         ${session.role==='student' ? `<a href="#" onclick="event.preventDefault(); openChangePasswordModal()" style="display:block;text-align:center;font-size:12px;color:#9cdcc9;margin-bottom:8px;">Change password</a>` : ''}
+        ${session.role==='admin' ? `<a href="#" onclick="event.preventDefault(); openAdminChangePasswordModal()" style="display:block;text-align:center;font-size:12px;color:#9cdcc9;margin-bottom:8px;">Change password</a>` : ''}
         <button class="logout-btn" onclick="logout()">Sign out</button>
         <div style="text-align:center;margin-top:10px;font-size:10.5px;color:#6ea88c;">
           <a href="#" onclick="event.preventDefault(); openLegalModal('copyright')" style="color:#6ea88c;">Copyright</a> ·
