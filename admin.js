@@ -5,6 +5,31 @@
    student.js — that leakage was found and moved into core.js instead.
    ===================================================================== */
 /* ============================= ADMIN ============================= */
+// Real accounts now live in Supabase, not DB.users/localStorage. This cache
+// bridges that into the existing synchronous-render architecture: the first
+// time the Accounts page renders, it kicks off a fetch and shows a loading
+// state; when the fetch resolves, the cache fills in and the page re-renders
+// for real. Anything that changes accounts (create, for now) clears the
+// cache so the next render fetches fresh data instead of showing stale rows.
+let supabaseAccountsCache = null;
+let supabaseAccountsLoading = false;
+function loadAccountsFromServer(){
+  if(supabaseAccountsLoading || supabaseAccountsCache!==null) return;
+  supabaseAccountsLoading = true;
+  fetch('/api/accounts/list')
+    .then(r=>r.json())
+    .then(data=>{
+      supabaseAccountsCache = data.users || [];
+      supabaseAccountsLoading = false;
+      renderApp();
+    })
+    .catch(()=>{
+      supabaseAccountsCache = [];
+      supabaseAccountsLoading = false;
+      showToast('Could not load accounts from the server.','err');
+      renderApp();
+    });
+}
 function adminDashboard(){
   const instructors = DB.users.filter(u=>u.role==='instructor');
   const students = DB.users.filter(u=>u.role==='student');
@@ -53,7 +78,7 @@ function filteredAccountsList(){
   const roleFilter = params.roleFilter || 'all';
   const yearFilter = params.yearFilter || 'all';
   const statusFilter = params.statusFilter || 'all';
-  let list = DB.users.filter(u=>u.id!==session.id);
+  let list = (supabaseAccountsCache || []).filter(u=>u.id!==session.id);
   if(roleFilter!=='all') list = list.filter(u=>u.role===roleFilter);
   if(yearFilter!=='all') list = list.filter(u=>u.role==='student' && u.yearStanding===yearFilter);
   if(statusFilter!=='all') list = list.filter(u=>u.role==='student' && u.status===statusFilter);
@@ -61,6 +86,10 @@ function filteredAccountsList(){
   return [...list].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
 }
 function adminAccounts(){
+  if(supabaseAccountsCache===null){
+    loadAccountsFromServer();
+    return `<div class="card card-pad">${emptyState('layers','Loading accounts…','Fetching the latest accounts from the server.')}</div>`;
+  }
   const roleFilter = params.roleFilter || 'all';
   const yearFilter = params.yearFilter || 'all';
   const statusFilter = params.statusFilter || 'all';
@@ -189,7 +218,7 @@ function openAddAccountModal(){
         </div>
       </div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveNewAccount()">${icon('save')} Save account</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="save-account-btn" onclick="saveNewAccount()">${icon('save')} Save account</button></div>
   </div>`);
 }
 function toggleAccountRoleFields(role){
@@ -210,29 +239,49 @@ async function saveNewAccount(){
   const sectionId = document.getElementById('f-section') ? document.getElementById('f-section').value : '';
 
   let name, surname, firstName, middleInitial;
+  const payload = {role, schoolId, password};
   if(role==='student'){
     surname = document.getElementById('f-surname').value.trim();
     firstName = document.getElementById('f-firstname').value.trim();
     middleInitial = document.getElementById('f-mi').value.trim();
     if(!surname || !firstName){ showToast('Please fill in surname and first name.','err'); return; }
     name = formatStudentName(surname, firstName, middleInitial);
+    payload.surname = surname; payload.firstName = firstName; payload.middleInitial = middleInitial;
+    payload.sectionId = sectionId || null;
+    payload.yearStanding = document.getElementById('f-standing').value;
+    payload.status = document.getElementById('f-status').value;
   } else {
     name = document.getElementById('f-name').value.trim();
     if(!name){ showToast('Please fill in the full name.','err'); return; }
+    payload.name = name;
   }
   if(!schoolId || !password){ showToast('Please fill in school ID and password.','err'); return; }
-  if(DB.users.some(u=>u.schoolId.toLowerCase()===schoolId.toLowerCase())){ showToast('That school ID is already registered.','err'); return; }
-  const salt = generateSalt();
-  const passwordHash = await hashPassword(password, salt);
-  const newUser = {id:uid(), name, schoolId, salt, passwordHash, role};
-  if(role==='student'){
-    newUser.surname = surname; newUser.firstName = firstName; newUser.middleInitial = middleInitial;
-    newUser.sectionId = sectionId || null;
-    newUser.yearStanding = document.getElementById('f-standing').value;
-    newUser.status = document.getElementById('f-status').value;
+
+  const btn = document.getElementById('save-account-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  let data;
+  try{
+    const resp = await fetch('/api/accounts/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    data = await resp.json();
+    if(!resp.ok){
+      showToast(data.error || 'Could not create the account.', 'err');
+      btn.disabled = false;
+      btn.textContent = 'Save account';
+      return;
+    }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.', 'err');
+    btn.disabled = false;
+    btn.textContent = 'Save account';
+    return;
   }
-  DB.users.push(newUser);
-  await persist('users');
+
+  supabaseAccountsCache = null; // force a fresh fetch next time the Accounts page renders
   closeModal();
   showToast('Account created.');
   openModal(`
