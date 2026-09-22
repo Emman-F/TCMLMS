@@ -551,7 +551,7 @@ function bulkImportModalHtml(allowInstructors){
       <input type="file" id="bulk-file" accept=".csv,.txt,text/csv,text/plain" style="margin-bottom:10px;" onchange="handleBulkFileSelect(this)">
       <textarea class="input" id="bulk-text" rows="7" placeholder="${bulkImportPlaceholder()}"></textarea>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="applyBulkImport()">${icon('up')} Add ${bulkImportMode==='student'?'students':'instructors'}</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="bulk-import-btn" onclick="applyBulkImport()">${icon('up')} Add ${bulkImportMode==='student'?'students':'instructors'}</button></div>
   </div>`;
 }
 function bulkImportColumnsHint(){
@@ -580,7 +580,7 @@ function handleBulkFileSelect(input){
 async function applyBulkImport(){
   const raw = document.getElementById('bulk-text').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
-  const created = []; const skipped = [];
+  const candidates = []; const preSkipped = [];
   const mode = bulkImportMode;
   const yearLock = bulkImportYear;
 
@@ -590,45 +590,53 @@ async function applyBulkImport(){
 
     if(mode==='student'){
       let parts = [...cells];
-      const expectedCols = yearLock ? 6 : 7; // surname, first, mi, schoolId, section, [yearStanding], status
-      // If the row is short by exactly one column, assume School ID — the one field we
-      // let people leave out — was the one omitted, and shift everything after it back
-      // into place instead of misreading the section/status into the wrong slots.
+      const expectedCols = yearLock ? 6 : 7;
       if(parts.length === expectedCols - 1) parts.splice(3, 0, '');
       const [surname, firstName, middleInitial, schoolIdRaw, sectionName, col6, col7] = parts;
       const schoolId = (schoolIdRaw||'').trim();
       const yearStanding = yearLock || col6;
       const status = yearLock ? col6 : col7;
-      if(!surname || !firstName){ skipped.push(line); continue; }
-      if(schoolId && DB.users.some(u=>u.schoolId.toLowerCase()===schoolId.toLowerCase())){ skipped.push(line+' (school ID already registered)'); continue; }
-      const password = surnamePassword(surname);
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(password, salt);
-      const name = formatStudentName(surname, firstName, middleInitial||'');
-      let sectionPool = session.role==='instructor' ? DB.sections.filter(s=>s.instructorId===session.id) : DB.sections;
-      if(yearLock) sectionPool = sectionPool.filter(s=>s.yearLevel===yearLock);
-      const sec = sectionPool.find(s=> s.name.toLowerCase()===((sectionName||'')).toLowerCase());
-      const u = {
-        id:uid(), name, surname, firstName, middleInitial:middleInitial||'', schoolId, salt, passwordHash, role:'student',
-        sectionId: sec ? sec.id : null,
-        yearStanding: STUDENT_YEAR_STANDINGS.includes(yearStanding) ? yearStanding : (yearStanding || '1st Year'),
-        status: STUDENT_STATUSES.includes(status) ? status : 'Active',
-      };
-      DB.users.push(u);
-      created.push({name, schoolId: schoolId || '—', password});
+      if(!surname || !firstName){ preSkipped.push(line); continue; }
+      candidates.push({role:'student', surname, firstName, middleInitial: middleInitial||'', schoolId, yearStanding, status});
     } else {
       const [name, schoolId] = cells;
-      if(!name || !schoolId){ skipped.push(line); continue; }
-      if(DB.users.some(u=>u.schoolId.toLowerCase()===schoolId.toLowerCase())){ skipped.push(line+' (school ID already registered)'); continue; }
-      const password = genPassword();
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(password, salt);
-      const u = {id:uid(), name, schoolId, salt, passwordHash, role:'instructor'};
-      DB.users.push(u);
-      created.push({name, schoolId, password});
+      if(!name || !schoolId){ preSkipped.push(line); continue; }
+      candidates.push({role:'instructor', name, schoolId});
     }
   }
-  await persist('users');
+
+  if(!candidates.length){
+    showToast('No accounts were added — check the format.','err');
+    return;
+  }
+
+  const btn = document.getElementById('bulk-import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  let data;
+  try{
+    const resp = await fetch('/api/accounts/bulk-create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({accounts: candidates}),
+    });
+    data = await resp.json();
+    if(!resp.ok){
+      showToast(data.error || 'Could not import accounts.', 'err');
+      btn.disabled = false;
+      btn.textContent = `Add ${mode==='student'?'students':'instructors'}`;
+      return;
+    }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.', 'err');
+    btn.disabled = false;
+    btn.textContent = `Add ${mode==='student'?'students':'instructors'}`;
+    return;
+  }
+
+  const created = data.created || [];
+  const skipped = [...preSkipped, ...(data.skipped||[]).map(s=>`${s.schoolId} (${s.reason})`)];
+  supabaseAccountsCache = null; // force a fresh fetch so imported accounts actually show up
   closeModal();
   if(created.length===0){ showToast('No accounts were added — check the format.','err'); renderApp(); return; }
   openModal(`
