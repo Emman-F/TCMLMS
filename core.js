@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-17';
+const BUILD_VERSION = '2026.09.18-18';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -106,6 +106,15 @@ async function loadDB(){
   if(!DB.terms.length){
     DB.terms = [{id:uid(), name:'AY 2025–2026, 1st Semester', status:'active', createdAt:Date.now()}];
     await persist('terms');
+  }
+  const savedSession = localStorage.getItem('tcmlms:session');
+  if(savedSession){
+    try{
+      session = JSON.parse(savedSession);
+      view = session.role==='admin' ? 'admin-dashboard' : session.role==='instructor' ? 'ins-dashboard' : 'stu-dashboard';
+    } catch(e){
+      localStorage.removeItem('tcmlms:session'); // corrupted entry -- fall back to a normal login screen
+    }
   }
   ready = true;
 }
@@ -405,11 +414,12 @@ async function doLogin(ev){
     return;
   }
   session = data.user;
+  localStorage.setItem('tcmlms:session', JSON.stringify(session));
   view = session.role==='admin' ? 'admin-dashboard' : session.role==='instructor' ? 'ins-dashboard' : 'stu-dashboard';
   params = {};
   renderApp();
 }
-function logout(){ session=null; view='login'; params={}; renderApp(); }
+function logout(){ session=null; localStorage.removeItem('tcmlms:session'); view='login'; params={}; renderApp(); }
 
 /* ============================= RENDER ROOT ============================= */
 function renderApp(){
