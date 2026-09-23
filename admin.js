@@ -30,6 +30,117 @@ function loadAccountsFromServer(){
       renderApp();
     });
 }
+// Same bridge pattern, for the real Supabase-backed sections list -- used by
+// the "Assign section" batch action below. Kept separate from the instructor's
+// own Class page, which still manages sections locally for now.
+let supabaseSectionsCache = null;
+let supabaseSectionsLoading = false;
+function loadSectionsFromServer(onDone){
+  if(supabaseSectionsCache!==null){ if(onDone) onDone(); return; }
+  if(supabaseSectionsLoading) return;
+  supabaseSectionsLoading = true;
+  fetch('/api/sections/list')
+    .then(r=>r.json())
+    .then(data=>{
+      supabaseSectionsCache = data.sections || [];
+      supabaseSectionsLoading = false;
+      if(onDone) onDone(); else renderApp();
+    })
+    .catch(()=>{
+      supabaseSectionsCache = [];
+      supabaseSectionsLoading = false;
+      showToast('Could not load sections from the server.','err');
+      if(onDone) onDone(); else renderApp();
+    });
+}
+let assignSectionCreateNew = false;
+function openAssignSectionModal(){
+  if(supabaseSectionsCache===null){
+    openModal(`<div class="modal"><div class="modal-body" style="padding:30px;">${emptyState('layers','Loading sections…','Fetching the latest sections from the server.')}</div></div>`);
+    loadSectionsFromServer(()=>{ closeModal(); openModal(assignSectionModalHtml()); });
+    return;
+  }
+  assignSectionCreateNew = false;
+  openModal(assignSectionModalHtml());
+}
+function assignSectionModalHtml(){
+  const sections = supabaseSectionsCache || [];
+  const n = selectedAccountIds.size;
+  return `
+  <div class="modal">
+    <div class="modal-head"><h3>Assign section</h3><button class="modal-close" onclick="closeModal()" aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:14px;">Assigning to ${n} selected account${n===1?'':'s'}.</p>
+      ${!assignSectionCreateNew ? `
+        <div class="form-group"><label>Section</label>
+          <select class="input" id="assign-section-select">
+            ${sections.length ? sections.map(s=>`<option value="${s.id}">${esc(s.yearLevel)} · ${esc(s.name)}</option>`).join('') : `<option value="">No sections yet — create one below</option>`}
+          </select>
+        </div>
+        <a href="#" onclick="event.preventDefault(); assignSectionCreateNew=true; openModal(assignSectionModalHtml());" style="font-size:12.8px;font-weight:700;color:var(--e-700);">+ Create a new section instead</a>
+      ` : `
+        <div class="row-2">
+          <div class="form-group"><label>Section name</label><input class="input" id="assign-section-newname" placeholder="e.g. Section A"></div>
+          <div class="form-group"><label>Year level</label>
+            <select class="input" id="assign-section-newyear">
+              ${STUDENT_YEAR_STANDINGS.map(y=>`<option value="${y}">${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        ${sections.length ? `<a href="#" onclick="event.preventDefault(); assignSectionCreateNew=false; openModal(assignSectionModalHtml());" style="font-size:12.8px;font-weight:700;color:var(--e-700);">← Pick an existing section instead</a>` : ''}
+      `}
+      <div id="assign-section-err" class="hint" style="color:var(--rose);display:none;margin-top:10px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="assign-section-btn" onclick="applyAssignSection()">${icon('save')} Assign</button></div>
+  </div>`;
+}
+async function applyAssignSection(){
+  const ids = [...selectedAccountIds];
+  const errEl = document.getElementById('assign-section-err');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+  const btn = document.getElementById('assign-section-btn');
+
+  let sectionId;
+  if(assignSectionCreateNew){
+    const name = document.getElementById('assign-section-newname').value.trim();
+    const yearLevel = document.getElementById('assign-section-newyear').value;
+    if(!name){ showErr('Please name the section.'); return; }
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try{
+      const resp = await fetch('/api/sections/create', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, yearLevel, instructorId: session.id}),
+      });
+      const data = await resp.json();
+      if(!resp.ok){ showErr(data.error || 'Could not create the section.'); btn.disabled=false; btn.textContent='Assign'; return; }
+      sectionId = data.section.id;
+      supabaseSectionsCache = null; // refresh so the new section shows up in the list next time
+    } catch(e){
+      showErr('Could not reach the server. Check your connection and try again.'); btn.disabled=false; btn.textContent='Assign'; return;
+    }
+  } else {
+    sectionId = document.getElementById('assign-section-select').value;
+    if(!sectionId){ showErr('Select a section, or create a new one.'); return; }
+  }
+
+  btn.disabled = true; btn.textContent = 'Assigning…';
+  try{
+    const resp = await fetch('/api/accounts/assign-section', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ids, sectionId}),
+    });
+    const data = await resp.json();
+    if(!resp.ok){ showErr(data.error || 'Could not assign the section.'); btn.disabled=false; btn.textContent='Assign'; return; }
+  } catch(e){
+    showErr('Could not reach the server. Check your connection and try again.'); btn.disabled=false; btn.textContent='Assign'; return;
+  }
+
+  supabaseAccountsCache = null; // force a fresh fetch so the Section column updates
+  ids.forEach(id=>selectedAccountIds.delete(id));
+  closeModal();
+  showToast(`${ids.length} account${ids.length===1?'':'s'} assigned.`);
+  renderApp();
+}
 function openAdminChangePasswordModal(){
   openModal(`
   <div class="modal">
@@ -79,15 +190,16 @@ async function saveAdminChangePassword(){
   showToast('Password updated.');
 }
 function adminDashboard(){
-  if(supabaseAccountsCache===null){
+  if(supabaseAccountsCache===null || supabaseSectionsCache===null){
     loadAccountsFromServer();
+    loadSectionsFromServer();
     return `<div class="card card-pad">${emptyState('layers','Loading dashboard…','Fetching the latest account data from the server.')}</div>`;
   }
   const allAccounts = supabaseAccountsCache;
   const instructors = allAccounts.filter(u=>u.role==='instructor');
   const students = allAccounts.filter(u=>u.role==='student');
   const unassignedStudents = students.filter(s=>!s.sectionId);
-  const emptySections = DB.sections.filter(sec=> !DB.subjects.some(sub=>sub.sectionId===sec.id));
+  const emptySections = supabaseSectionsCache.filter(sec=> !DB.subjects.some(sub=>sub.sectionId===sec.id));
   const needsGradingCount = DB.submissions.filter(s=>{
     const a = assessmentById(s.assessmentId);
     return a && !submissionFullyGraded(s, a);
@@ -98,7 +210,7 @@ function adminDashboard(){
   <div class="grid grid-4" style="margin-bottom:16px;">
     ${statCard('users','Instructors', instructors.length)}
     ${statCard('users','Students', students.length)}
-    ${statCard('layers','Sections', DB.sections.length)}
+    ${statCard('layers','Sections', supabaseSectionsCache.length)}
     ${statCard('book','Subjects', DB.subjects.length)}
   </div>
   <div class="grid grid-4" style="margin-bottom:22px;">
@@ -139,8 +251,9 @@ function filteredAccountsList(){
   return [...list].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
 }
 function adminAccounts(){
-  if(supabaseAccountsCache===null){
+  if(supabaseAccountsCache===null || supabaseSectionsCache===null){
     loadAccountsFromServer();
+    loadSectionsFromServer();
     return `<div class="card card-pad">${emptyState('layers','Loading accounts…','Fetching the latest accounts from the server.')}</div>`;
   }
   const roleFilter = params.roleFilter || 'all';
@@ -167,6 +280,7 @@ function adminAccounts(){
       </select>
       <button class="btn btn-outline btn-sm" onclick="exportAccountsCSV()">${icon('down')} Download CSV</button>
       ${selectedAccountIds.size? `<button class="btn btn-outline btn-sm" onclick="openBatchPasswordModal()">${icon('key')} Set password (${selectedAccountIds.size})</button>
+      <button class="btn btn-outline btn-sm" onclick="openAssignSectionModal()">${icon('layers')} Assign section (${selectedAccountIds.size})</button>
       <button class="btn btn-outline btn-sm" style="color:var(--rose);border-color:var(--rose);" onclick="deleteSelectedAccounts()">${icon('trash')} Delete (${selectedAccountIds.size})</button>` : ''}
     </div>
     <div class="toolbar-left">
