@@ -6,6 +6,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed.' });
   }
+  res.setHeader('Cache-Control', 'no-store');
 
   let supabase;
   try {
