@@ -52,6 +52,23 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 
+  // Prevent the same instructor from creating two sections with the same
+  // name in the same year level -- case-insensitive, so "Section A" and
+  // "section a" count as the same name.
+  const { data: existing, error: dupCheckError } = await supabase
+    .from('sections')
+    .select('id, name')
+    .eq('instructor_id', instructorId)
+    .eq('year_level', yearLevel);
+  if (dupCheckError) {
+    console.error('Duplicate-check error:', dupCheckError.message);
+    return res.status(500).json({ error: 'Server error. Please try again.' });
+  }
+  const nameKey = name.toLowerCase();
+  if ((existing || []).some(s => (s.name || '').trim().toLowerCase() === nameKey)) {
+    return res.status(409).json({ error: `You already have a section named "${name}" in ${yearLevel}.` });
+  }
+
   const { data: created, error: insertError } = await supabase
     .from('sections')
     .insert({ name, year_level: yearLevel, instructor_id: instructorId, term_id: term.id })
