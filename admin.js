@@ -16,7 +16,7 @@ let supabaseAccountsLoading = false;
 function loadAccountsFromServer(){
   if(supabaseAccountsLoading || supabaseAccountsCache!==null) return;
   supabaseAccountsLoading = true;
-  fetch('/api/accounts/list')
+  fetch('/api/accounts/list', {cache: 'no-store'})
     .then(r=>r.json())
     .then(data=>{
       supabaseAccountsCache = data.users || [];
@@ -39,7 +39,7 @@ function loadSectionsFromServer(onDone){
   if(supabaseSectionsCache!==null){ if(onDone) onDone(); return; }
   if(supabaseSectionsLoading) return;
   supabaseSectionsLoading = true;
-  fetch('/api/sections/list')
+  fetch('/api/sections/list', {cache: 'no-store'})
     .then(r=>r.json())
     .then(data=>{
       supabaseSectionsCache = data.sections || [];
@@ -971,4 +971,3 @@ function handleRestoreFile(input){
   };
   reader.readAsText(file);
 }
-
