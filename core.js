@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-20';
+const BUILD_VERSION = '2026.09.18-21';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -223,7 +223,7 @@ function surnamePassword(surname){
   return s.split(' ').filter(Boolean).map(w=> w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 function userById(id){ return DB.users.find(u=>u.id===id) || (typeof supabaseAccountsCache!=='undefined' && supabaseAccountsCache ? supabaseAccountsCache.find(u=>u.id===id) : undefined); }
-function sectionById(id){ return DB.sections.find(s=>s.id===id); }
+function sectionById(id){ return DB.sections.find(s=>s.id===id) || (typeof supabaseSectionsCache!=='undefined' && supabaseSectionsCache ? supabaseSectionsCache.find(s=>s.id===id) : undefined); }
 function subjectById(id){ return DB.subjects.find(s=>s.id===id); }
 function assessmentById(id){ return DB.assessments.find(a=>a.id===id); }
 function studentsInSection(sectionId){
