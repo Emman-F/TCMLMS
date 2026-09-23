@@ -141,6 +141,46 @@ async function applyAssignSection(){
   showToast(`${ids.length} account${ids.length===1?'':'s'} assigned.`);
   renderApp();
 }
+function openAssignDepartmentModal(){
+  openModal(`
+  <div class="modal">
+    <div class="modal-head"><h3>Assign department</h3><button class="modal-close" onclick="closeModal()" aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:14px;">Assigning to ${selectedAccountIds.size} selected account${selectedAccountIds.size===1?'':'s'} — works for students and instructors alike.</p>
+      <div class="form-group"><label>Department</label>
+        <select class="input" id="assign-dept-select">
+          ${DEPARTMENTS.map(d=>`<option value="${d}">${d}</option>`).join('')}
+        </select>
+      </div>
+      <div id="assign-dept-err" class="hint" style="color:var(--rose);display:none;margin-top:10px;"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="assign-dept-btn" onclick="applyAssignDepartment()">${icon('save')} Assign</button></div>
+  </div>`);
+}
+async function applyAssignDepartment(){
+  const ids = [...selectedAccountIds];
+  const department = document.getElementById('assign-dept-select').value;
+  const errEl = document.getElementById('assign-dept-err');
+  const showErr = msg => { errEl.textContent = msg; errEl.style.display = 'block'; };
+  const btn = document.getElementById('assign-dept-btn');
+  btn.disabled = true; btn.textContent = 'Assigning…';
+  let data;
+  try{
+    const resp = await fetch('/api/accounts/assign-department', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ids, department}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showErr(data.error || 'Could not assign the department.'); btn.disabled=false; btn.textContent='Assign'; return; }
+  } catch(e){
+    showErr('Could not reach the server. Check your connection and try again.'); btn.disabled=false; btn.textContent='Assign'; return;
+  }
+  supabaseAccountsCache = null; // force a fresh fetch so the Department column updates
+  ids.forEach(id=>selectedAccountIds.delete(id));
+  closeModal();
+  showToast(`${ids.length} account${ids.length===1?'':'s'} assigned.`);
+  renderApp();
+}
 function openAdminChangePasswordModal(){
   openModal(`
   <div class="modal">
@@ -281,6 +321,7 @@ function adminAccounts(){
       <button class="btn btn-outline btn-sm" onclick="exportAccountsCSV()">${icon('down')} Download CSV</button>
       ${selectedAccountIds.size? `<button class="btn btn-outline btn-sm" onclick="openBatchPasswordModal()">${icon('key')} Set password (${selectedAccountIds.size})</button>
       <button class="btn btn-outline btn-sm" onclick="openAssignSectionModal()">${icon('layers')} Assign section (${selectedAccountIds.size})</button>
+      <button class="btn btn-outline btn-sm" onclick="openAssignDepartmentModal()">${icon('layers')} Assign department (${selectedAccountIds.size})</button>
       <button class="btn btn-outline btn-sm" style="color:var(--rose);border-color:var(--rose);" onclick="deleteSelectedAccounts()">${icon('trash')} Delete (${selectedAccountIds.size})</button>` : ''}
     </div>
     <div class="toolbar-left">
@@ -293,7 +334,7 @@ function adminAccounts(){
     <table>
       <thead><tr>
         <th><input type="checkbox" class="checkbox" onchange="toggleSelectAll(this.checked)" ${list.length && list.every(u=>selectedAccountIds.has(u.id))?'checked':''}></th>
-        <th>Name</th><th>School ID</th><th>Role</th><th>Section</th><th>Year standing</th><th>Status</th><th>Password</th><th></th>
+        <th>Name</th><th>School ID</th><th>Role</th><th>Department</th><th>Section</th><th>Year standing</th><th>Status</th><th>Password</th><th></th>
       </tr></thead>
       <tbody>
         ${list.length ? list.map(u=>`
@@ -302,6 +343,7 @@ function adminAccounts(){
             <td style="font-weight:700;color:var(--e-950);">${esc(u.name)}</td>
             <td style="color:var(--muted);">${esc(u.schoolId)}</td>
             <td><span class="badge badge-neutral" style="text-transform:capitalize;">${u.role}</span></td>
+            <td>${u.department ? esc(u.department) : '<span style="color:var(--muted)">Unassigned</span>'}</td>
             <td>${u.role==='student' ? (sectionById(u.sectionId)? esc(sectionById(u.sectionId).name) : '<span style="color:var(--muted)">Unassigned</span>') : '<span class="hint">—</span>'}</td>
             <td>${u.role==='student' ? esc(u.yearStanding||'—') : '<span class="hint">—</span>'}</td>
             <td>${u.role==='student' ? statusBadge(u.status) : '<span class="hint">—</span>'}</td>
@@ -311,7 +353,7 @@ function adminAccounts(){
               <button class="btn btn-ghost btn-sm" onclick="deleteAccount('${u.id}')" aria-label="Delete account">${icon('trash')}</button>
             </td>
           </tr>`).join('')
-        : `<tr><td colspan="9">${emptyState('users','No accounts found','Try a different search or add a new account.')}</td></tr>`}
+        : `<tr><td colspan="10">${emptyState('users','No accounts found','Try a different search or add a new account.')}</td></tr>`}
       </tbody>
     </table>
     </div>
@@ -324,9 +366,9 @@ function toggleSelectAll(checked){
 }
 function exportAccountsCSV(){
   const list = filteredAccountsList();
-  const header = ['Name','School ID','Role','Section','Year Standing','Status'];
+  const header = ['Name','School ID','Role','Department','Section','Year Standing','Status'];
   const rows = [header, ...list.map(u=>[
-    u.name, u.schoolId, u.role,
+    u.name, u.schoolId, u.role, u.department || '',
     u.role==='student' ? (sectionById(u.sectionId)?sectionById(u.sectionId).name:'Unassigned') : '',
     u.role==='student' ? (u.yearStanding||'') : '',
     u.role==='student' ? (u.status||'') : '',
