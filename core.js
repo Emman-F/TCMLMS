@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-27';
+const BUILD_VERSION = '2026.09.18-28';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -248,7 +248,28 @@ function loadSectionsFromServer(onDone){
       if(onDone) onDone(); else renderApp();
     });
 }
-function subjectById(id){ return DB.subjects.find(s=>s.id===id); }
+function subjectById(id){ return DB.subjects.find(s=>s.id===id) || (typeof supabaseSubjectsCache!=='undefined' && supabaseSubjectsCache ? supabaseSubjectsCache.find(s=>s.id===id) : undefined); }
+let supabaseSubjectsCache = null;
+let supabaseSubjectsLoading = false;
+let supabaseSubjectsLoadError = false;
+function loadSubjectsFromServer(onDone){
+  if(supabaseSubjectsCache!==null){ if(onDone) onDone(); return; }
+  if(supabaseSubjectsLoading) return;
+  supabaseSubjectsLoading = true;
+  supabaseSubjectsLoadError = false;
+  fetch('/api/subjects/list', {cache: 'no-store'})
+    .then(r=>r.json())
+    .then(data=>{
+      supabaseSubjectsCache = data.subjects || [];
+      supabaseSubjectsLoading = false;
+      if(onDone) onDone(); else renderApp();
+    })
+    .catch(()=>{
+      supabaseSubjectsLoading = false;
+      supabaseSubjectsLoadError = true;
+      if(onDone) onDone(); else renderApp();
+    });
+}
 function assessmentById(id){ return DB.assessments.find(a=>a.id===id); }
 function studentsInSection(sectionId){
   const source = (typeof supabaseAccountsCache!=='undefined' && supabaseAccountsCache) ? supabaseAccountsCache : DB.users;
@@ -256,7 +277,7 @@ function studentsInSection(sectionId){
     .filter(u=>u.role==='student' && u.sectionId===sectionId)
     .sort((a,b)=> (a.surname||a.name||'').localeCompare(b.surname||b.name||'') || (a.firstName||'').localeCompare(b.firstName||''));
 }
-function subjectsOfInstructor(insId){ return DB.subjects.filter(s=>s.instructorId===insId); }
+function subjectsOfInstructor(insId){ return (typeof supabaseSubjectsCache!=='undefined' && supabaseSubjectsCache ? supabaseSubjectsCache : DB.subjects).filter(s=>s.instructorId===insId); }
 function assessmentsOfSubject(subId){ return DB.assessments.filter(a=>a.subjectId===subId); }
 function submissionFor(assessmentId, studentId){ return DB.submissions.find(s=>s.assessmentId===assessmentId && s.studentId===studentId); }
 function typeBadge(t){ return `<span class="badge badge-${t}">${t[0].toUpperCase()+t.slice(1)}</span>`; }
