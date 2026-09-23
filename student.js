@@ -7,7 +7,8 @@
 /* ============================= STUDENT ============================= */
 function myEnrolledSubjects(){
   if(!session.sectionId) return [];
-  return DB.subjects.filter(s=>s.sectionId===session.sectionId);
+  const source = (typeof supabaseSubjectsCache!=='undefined' && supabaseSubjectsCache) ? supabaseSubjectsCache : DB.subjects;
+  return source.filter(s=>s.sectionId===session.sectionId);
 }
 function openChangePasswordModal(){
   openModal(`
@@ -363,4 +364,3 @@ function subjectPicker2(currentId, subs){
     ${subs.map(s=>`<option value="${s.id}" ${s.id===currentId?'selected':''}>${esc(s.name)}</option>`).join('')}
   </select>`;
 }
-
