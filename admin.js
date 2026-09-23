@@ -30,29 +30,6 @@ function loadAccountsFromServer(){
       renderApp();
     });
 }
-// Same bridge pattern, for the real Supabase-backed sections list -- used by
-// the "Assign section" batch action below. Kept separate from the instructor's
-// own Class page, which still manages sections locally for now.
-let supabaseSectionsCache = null;
-let supabaseSectionsLoading = false;
-function loadSectionsFromServer(onDone){
-  if(supabaseSectionsCache!==null){ if(onDone) onDone(); return; }
-  if(supabaseSectionsLoading) return;
-  supabaseSectionsLoading = true;
-  fetch('/api/sections/list', {cache: 'no-store'})
-    .then(r=>r.json())
-    .then(data=>{
-      supabaseSectionsCache = data.sections || [];
-      supabaseSectionsLoading = false;
-      if(onDone) onDone(); else renderApp();
-    })
-    .catch(()=>{
-      supabaseSectionsCache = [];
-      supabaseSectionsLoading = false;
-      showToast('Could not load sections from the server.','err');
-      if(onDone) onDone(); else renderApp();
-    });
-}
 let assignSectionCreateNew = false;
 function openAssignSectionModal(){
   if(supabaseSectionsCache===null){
