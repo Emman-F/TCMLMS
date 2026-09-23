@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-28';
+const BUILD_VERSION = '2026.09.18-29';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -743,6 +743,17 @@ function pageSubtitle(){
 }
 
 function renderContent(){
+  if(session.role==='student'){
+    if(supabaseSubjectsLoadError || supabaseSectionsLoadError || supabaseAccountsLoadError){
+      return loadErrorBlock('supabaseSubjectsCache=null;supabaseSectionsCache=null;supabaseAccountsCache=null;supabaseSubjectsLoadError=false;supabaseSectionsLoadError=false;supabaseAccountsLoadError=false;renderApp();');
+    }
+    if(supabaseSubjectsCache===null || supabaseSectionsCache===null || supabaseAccountsCache===null){
+      loadSubjectsFromServer();
+      loadSectionsFromServer();
+      loadAccountsFromServer();
+      return `<div class="card card-pad">${emptyState('book','Loading…','Fetching your latest subjects and assessments from the server.')}</div>`;
+    }
+  }
   const routes = {
     'admin-dashboard':adminDashboard,'admin-accounts':adminAccounts,'admin-terms':adminTerms,'admin-audit':adminAudit,'admin-backup':adminBackup,
     'ins-dashboard':insDashboard,'ins-sections':insSections,'ins-subjects':insSubjects,'ins-students':insStudents,'ins-assessments':insAssessments,'ins-grading':insGrading,'ins-attendance':insAttendance,'ins-performance':insPerformance,'ins-screenwatch':insScreenWatch,
