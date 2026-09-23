@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-24';
+const BUILD_VERSION = '2026.09.18-25';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -229,10 +229,12 @@ function sectionById(id){ return DB.sections.find(s=>s.id===id) || (typeof supab
 // instructor's own Class page need the same live data.
 let supabaseSectionsCache = null;
 let supabaseSectionsLoading = false;
+let supabaseSectionsLoadError = false;
 function loadSectionsFromServer(onDone){
   if(supabaseSectionsCache!==null){ if(onDone) onDone(); return; }
   if(supabaseSectionsLoading) return;
   supabaseSectionsLoading = true;
+  supabaseSectionsLoadError = false;
   fetch('/api/sections/list', {cache: 'no-store'})
     .then(r=>r.json())
     .then(data=>{
@@ -241,9 +243,8 @@ function loadSectionsFromServer(onDone){
       if(onDone) onDone(); else renderApp();
     })
     .catch(()=>{
-      supabaseSectionsCache = [];
       supabaseSectionsLoading = false;
-      showToast('Could not load sections from the server.','err');
+      supabaseSectionsLoadError = true;
       if(onDone) onDone(); else renderApp();
     });
 }
@@ -738,6 +739,13 @@ function renderContent(){
 /* Moved here from admin.js — these are genuinely role-agnostic, used by 2+ roles. */
 function emptyState(iconName,title,desc){
   return `<div class="empty-state">${icon(iconName)}<h4>${title}</h4><div style="font-size:12.8px;">${desc}</div></div>`;
+}
+function loadErrorBlock(retryOnclick){
+  return `<div class="card card-pad" style="text-align:center;padding:40px 20px;">
+    <div style="font-weight:700;color:var(--rose);margin-bottom:6px;">Could not load from the server.</div>
+    <div class="hint" style="margin-bottom:14px;">Check your connection and try again.</div>
+    <button class="btn btn-primary btn-sm" onclick="${retryOnclick}">Retry</button>
+  </div>`;
 }
 
 function liveSearch(field, value){
