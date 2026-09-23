@@ -10,11 +10,8 @@ module.exports = async function handler(req, res) {
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch { body = {}; }
   }
-  const ids = Array.isArray((body || {}).ids) ? body.ids.filter(Boolean) : [];
-
-  if (!ids.length) {
-    return res.status(400).json({ error: 'No accounts selected.' });
-  }
+  const id = ((body || {}).id || '').toString().trim();
+  if (!id) return res.status(400).json({ error: 'No section specified.' });
 
   let supabase;
   try {
@@ -24,16 +21,15 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
-  // The schema already handles cleanup correctly: submissions and attendance
-  // cascade-delete with the student, while audit_log rows survive with their
-  // student_id set to null -- same rules already tested for the local version,
-  // just enforced by Postgres itself here instead of application code.
-  const { error } = await supabase.from('users').delete().in('id', ids);
-
+  // The schema already handles this correctly: subjects (and their
+  // assessments/submissions/attendance) cascade-delete with the section,
+  // while students in it get section_id set to null rather than being
+  // deleted -- same careful behavior as the original local-only version.
+  const { error } = await supabase.from('sections').delete().eq('id', id);
   if (error) {
-    console.error('Account delete error:', error.message);
+    console.error('Section delete error:', error.message);
     return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 
-  return res.status(200).json({ deletedCount: ids.length });
+  return res.status(200).json({ ok: true });
 };
