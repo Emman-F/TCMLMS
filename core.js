@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-22';
+const BUILD_VERSION = '2026.09.18-23';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -817,4 +817,3 @@ function updateSurnameLivePassword(){
   const pEl = document.getElementById('f-password');
   if(sEl && pEl) pEl.value = surnamePassword(sEl.value.trim());
 }
-
