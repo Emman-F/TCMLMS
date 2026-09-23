@@ -62,8 +62,22 @@ function termSelectorHtml(){
 function insSections(){
   const viewingTermId = params.viewingTermId || activeTerm().id;
   const readOnly = viewingTermId !== activeTerm().id;
-  const mine = sortByYearThenName(DB.sections.filter(s=>s.instructorId===session.id && sectionInTerm(s, viewingTermId)), 'yearLevel', 'name');
-  const others = sortByYearThenName(DB.sections.filter(s=>s.instructorId!==session.id && sectionInTerm(s, viewingTermId)), 'yearLevel', 'name');
+
+  if(!readOnly && (supabaseSectionsCache===null || supabaseAccountsCache===null)){
+    loadSectionsFromServer();
+    loadAccountsFromServer();
+    return `<div class="card card-pad">${emptyState('layers','Loading sections…','Fetching the latest sections from the server.')}</div>`;
+  }
+  // Every section created through the real Add Section flow belongs to the
+  // one active Supabase term by construction (see /api/sections/create), so
+  // there's no need to filter those by term id the way local/historical data
+  // still is -- they're already, definitionally, "current".
+  const mine = readOnly
+    ? sortByYearThenName(DB.sections.filter(s=>s.instructorId===session.id && sectionInTerm(s, viewingTermId)), 'yearLevel', 'name')
+    : sortByYearThenName(supabaseSectionsCache.filter(s=>s.instructorId===session.id), 'yearLevel', 'name');
+  const others = readOnly
+    ? sortByYearThenName(DB.sections.filter(s=>s.instructorId!==session.id && sectionInTerm(s, viewingTermId)), 'yearLevel', 'name')
+    : sortByYearThenName(supabaseSectionsCache.filter(s=>s.instructorId!==session.id), 'yearLevel', 'name');
   const activeYear = ('sectionsYear' in params) ? params.sectionsYear : lastBrowsedYear;
   const activeSectionId = params.sectionsSectionId || null;
 
@@ -154,17 +168,31 @@ function openAddSectionModal(yearLevel){
     <div class="modal-body">
       <div class="form-group"><label>Section name</label><input class="input" id="f-secname" placeholder="e.g. Section A"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveSection('${esc(yearLevel)}')">${icon('save')} Create section</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="save-section-btn" onclick="saveSection('${esc(yearLevel)}')">${icon('save')} Create section</button></div>
   </div>`);
 }
-function saveSection(yearLevel){
+async function saveSection(yearLevel){
   const name = document.getElementById('f-secname').value.trim();
   if(!name){ showToast('Please name the section.','err'); return; }
-  DB.sections.push({id:uid(), name, yearLevel, instructorId:session.id, termId:activeTerm().id});
-  persist('sections'); closeModal(); showToast('Section created.'); renderApp();
+  const btn = document.getElementById('save-section-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  let data;
+  try{
+    const resp = await fetch('/api/sections/create', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, yearLevel, instructorId: session.id}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showToast(data.error || 'Could not create the section.','err'); btn.disabled=false; btn.textContent='Create section'; return; }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.','err'); btn.disabled=false; btn.textContent='Create section'; return;
+  }
+  supabaseSectionsCache = null; // force a fresh fetch so the new section shows up right away
+  closeModal(); showToast('Section created.'); renderApp();
 }
-function deleteSection(id){
+async function deleteSection(id){
   const sec = sectionById(id);
+  if(!sec){ showToast('Could not find that section. Try refreshing the page.','err'); return; }
   const subs = DB.subjects.filter(s=>s.sectionId===id);
   const studentsHere = studentsInSection(id);
   let msg = `Delete "${sec.name}"?`;
@@ -175,21 +203,33 @@ function deleteSection(id){
   }
   if(!confirm(msg)) return;
 
+  let data;
+  try{
+    const resp = await fetch('/api/sections/delete', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({id}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showToast(data.error || 'Could not delete the section.','err'); return; }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.','err'); return;
+  }
+
+  supabaseSectionsCache = null; // force a fresh fetch so the deletion shows up right away
+  supabaseAccountsCache = null; // students who were in it need to show as unassigned now too
+
   const subjectIds = subs.map(s=>s.id);
   const assessmentIds = DB.assessments.filter(a=>subjectIds.includes(a.subjectId)).map(a=>a.id);
-
-  DB.sections = DB.sections.filter(s=>s.id!==id);
   DB.subjects = DB.subjects.filter(s=>s.sectionId!==id);
   DB.assessments = DB.assessments.filter(a=>!subjectIds.includes(a.subjectId));
   DB.submissions = DB.submissions.filter(s=>!assessmentIds.includes(s.assessmentId));
   DB.attendance = DB.attendance.filter(a=>!subjectIds.includes(a.subjectId));
-  DB.users.forEach(u=>{ if(u.role==='student' && u.sectionId===id) u.sectionId = null; });
+  Promise.all(['subjects','assessments','submissions','attendance'].map(persist));
 
-  Promise.all(['sections','subjects','assessments','submissions','attendance','users'].map(persist));
   showToast('Section deleted.');
   params.sectionsSectionId = null;
   if(params.sectionsYear){
-    const stillHasSections = DB.sections.some(s=>s.instructorId===session.id && (s.yearLevel||'Unspecified')===params.sectionsYear);
+    const stillHasSections = supabaseSectionsCache===null ? true : supabaseSectionsCache.some(s=>s.instructorId===session.id && (s.yearLevel||'Unspecified')===params.sectionsYear && s.id!==id);
     if(!stillHasSections){ params.sectionsYear = null; lastBrowsedYear = null; }
   }
   renderApp();
@@ -1343,4 +1383,3 @@ function attemptLaunchLablock(){
     }
   }, 1500);
 }
-
