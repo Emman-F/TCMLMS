@@ -1,5 +1,4 @@
 const { getSupabaseAdmin } = require('../_supabaseAdmin');
-const { toClientUser } = require('../_userMapping');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -16,15 +15,16 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
-  const { data: rows, error } = await supabase
-    .from('users')
-    .select('*')
-    .order('name', { ascending: true });
-
+  const { data: rows, error } = await supabase.from('sections').select('*').order('name');
   if (error) {
-    console.error('Accounts list error:', error.message);
+    console.error('Sections list error:', error.message);
     return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 
-  return res.status(200).json({ users: (rows || []).map(toClientUser) });
+  return res.status(200).json({
+    sections: (rows || []).map(r => ({
+      id: r.id, name: r.name, yearLevel: r.year_level,
+      instructorId: r.instructor_id, termId: r.term_id,
+    })),
+  });
 };
