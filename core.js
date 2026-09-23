@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-19';
+const BUILD_VERSION = '2026.09.18-20';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -445,7 +445,7 @@ function renderLogin(){
         <div class="login-side">
           <div>
             <div style="display:flex;align-items:center;gap:10px;">
-              <div class="brand-mark" style="width:44px;height:44px;"><img src="logo.png" alt="TCM seal"></div>
+              <div class="brand-mark" style="width:44px;height:44px;"><img src="logo.png?v=2" alt="TCM seal"></div>
               <div>
                 <div style="font-family:Manrope;font-weight:800;font-size:19px;">TCM LMS</div>
                 <div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#9cdcc9;">For Undergraduates</div>
@@ -573,7 +573,7 @@ function renderShell(){
     <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
     <div class="sidebar" id="app-sidebar">
       <div class="brand">
-        <div class="brand-mark"><img src="logo.png" alt="TCM seal"></div>
+        <div class="brand-mark"><img src="logo.png?v=2" alt="TCM seal"></div>
         <div><div class="brand-name">TCM LMS</div><div class="brand-sub">For Undergraduates</div></div>
       </div>
       ${nav.map(group=>`
