@@ -63,6 +63,9 @@ function insSections(){
   const viewingTermId = params.viewingTermId || activeTerm().id;
   const readOnly = viewingTermId !== activeTerm().id;
 
+  if(!readOnly && (supabaseAccountsLoadError || supabaseSectionsLoadError)){
+    return loadErrorBlock('supabaseAccountsCache=null;supabaseSectionsCache=null;supabaseAccountsLoadError=false;supabaseSectionsLoadError=false;renderApp();');
+  }
   if(!readOnly && (supabaseSectionsCache===null || supabaseAccountsCache===null)){
     loadSectionsFromServer();
     loadAccountsFromServer();
