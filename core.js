@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-23';
+const BUILD_VERSION = '2026.09.18-24';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -224,10 +224,34 @@ function surnamePassword(surname){
 }
 function userById(id){ return DB.users.find(u=>u.id===id) || (typeof supabaseAccountsCache!=='undefined' && supabaseAccountsCache ? supabaseAccountsCache.find(u=>u.id===id) : undefined); }
 function sectionById(id){ return DB.sections.find(s=>s.id===id) || (typeof supabaseSectionsCache!=='undefined' && supabaseSectionsCache ? supabaseSectionsCache.find(s=>s.id===id) : undefined); }
+// Real sections now live in Supabase. Shared here (not in admin.js or
+// instructor.js specifically) because both the admin Accounts page and the
+// instructor's own Class page need the same live data.
+let supabaseSectionsCache = null;
+let supabaseSectionsLoading = false;
+function loadSectionsFromServer(onDone){
+  if(supabaseSectionsCache!==null){ if(onDone) onDone(); return; }
+  if(supabaseSectionsLoading) return;
+  supabaseSectionsLoading = true;
+  fetch('/api/sections/list', {cache: 'no-store'})
+    .then(r=>r.json())
+    .then(data=>{
+      supabaseSectionsCache = data.sections || [];
+      supabaseSectionsLoading = false;
+      if(onDone) onDone(); else renderApp();
+    })
+    .catch(()=>{
+      supabaseSectionsCache = [];
+      supabaseSectionsLoading = false;
+      showToast('Could not load sections from the server.','err');
+      if(onDone) onDone(); else renderApp();
+    });
+}
 function subjectById(id){ return DB.subjects.find(s=>s.id===id); }
 function assessmentById(id){ return DB.assessments.find(a=>a.id===id); }
 function studentsInSection(sectionId){
-  return DB.users
+  const source = (typeof supabaseAccountsCache!=='undefined' && supabaseAccountsCache) ? supabaseAccountsCache : DB.users;
+  return source
     .filter(u=>u.role==='student' && u.sectionId===sectionId)
     .sort((a,b)=> (a.surname||a.name||'').localeCompare(b.surname||b.name||'') || (a.firstName||'').localeCompare(b.firstName||''));
 }
