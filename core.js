@@ -30,7 +30,7 @@
 /* ============================= STATE ============================= */
 // Bump this on every shipped update — shown in the sidebar footer so it's easy to
 // verify you're looking at the build you think you are (not a stale cached copy).
-const BUILD_VERSION = '2026.09.18-21';
+const BUILD_VERSION = '2026.09.18-22';
 
 let DB = { users:[], sections:[], subjects:[], assessments:[], submissions:[], attendance:[], yearLevels:[], terms:[], notifications:[], auditLog:[] };
 let session = null;
@@ -350,6 +350,7 @@ const LABLOCK_DOWNLOAD_URL = '';
 const YEAR_STANDINGS = ['1st Year','2nd Year','3rd Year','4th Year'];
 const STUDENT_YEAR_STANDINGS = YEAR_STANDINGS;
 const STUDENT_STATUSES = ['Active','Inactive','Dropped','Withdrawn'];
+const DEPARTMENTS = ['BSIT','BSN','LAED','FPST','BSBA','BSA'];
 function statusBadgeClass(status){
   if(status==='Active') return 'badge-present';
   if(status==='Inactive') return 'badge-late';
