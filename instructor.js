@@ -6,8 +6,17 @@
    ===================================================================== */
 /* ============================= INSTRUCTOR ============================= */
 function insDashboard(){
+  if(supabaseSubjectsLoadError || supabaseSectionsLoadError || supabaseAccountsLoadError){
+    return loadErrorBlock('supabaseSubjectsCache=null;supabaseSectionsCache=null;supabaseAccountsCache=null;supabaseSubjectsLoadError=false;supabaseSectionsLoadError=false;supabaseAccountsLoadError=false;renderApp();');
+  }
+  if(supabaseSubjectsCache===null || supabaseSectionsCache===null || supabaseAccountsCache===null){
+    loadSubjectsFromServer();
+    loadSectionsFromServer();
+    loadAccountsFromServer();
+    return `<div class="card card-pad">${emptyState('book','Loading dashboard…','Fetching the latest data from the server.')}</div>`;
+  }
   const mySubjects = subjectsOfInstructor(session.id);
-  const mySections = DB.sections.filter(s=>s.instructorId===session.id);
+  const mySections = (supabaseSectionsCache||[]).filter(s=>s.instructorId===session.id);
   const myAssessments = DB.assessments.filter(a=> mySubjects.some(s=>s.id===a.subjectId));
   const pendingReview = myAssessments.reduce((n,a)=> n + DB.submissions.filter(s=>s.assessmentId===a.id && !submissionFullyGraded(s,a)).length, 0);
   const taughtSectionIds = [...new Set(mySubjects.map(s=>s.sectionId).filter(Boolean))];
@@ -239,7 +248,16 @@ async function deleteSection(id){
 }
 
 function insSubjects(){
-  const mine = sortByYearThenName(subjectsOfInstructor(session.id).filter(s=>{ const sec=sectionById(s.sectionId); return sec && sectionInTerm(sec, activeTerm().id); }).map(s=>({...s, yearLevel:(sectionById(s.sectionId)||{}).yearLevel||'Unspecified'})), 'yearLevel', 'name');
+  if(supabaseSubjectsLoadError || supabaseSectionsLoadError || supabaseAccountsLoadError){
+    return loadErrorBlock('supabaseSubjectsCache=null;supabaseSectionsCache=null;supabaseAccountsCache=null;supabaseSubjectsLoadError=false;supabaseSectionsLoadError=false;supabaseAccountsLoadError=false;renderApp();');
+  }
+  if(supabaseSubjectsCache===null || supabaseSectionsCache===null || supabaseAccountsCache===null){
+    loadSubjectsFromServer();
+    loadSectionsFromServer();
+    loadAccountsFromServer();
+    return `<div class="card card-pad">${emptyState('book','Loading subjects…','Fetching the latest subjects from the server.')}</div>`;
+  }
+  const mine = sortByYearThenName(subjectsOfInstructor(session.id).filter(s=>sectionById(s.sectionId)).map(s=>({...s, yearLevel:(sectionById(s.sectionId)||{}).yearLevel||'Unspecified'})), 'yearLevel', 'name');
   const activeYear = ('subjectsYear' in params) ? params.subjectsYear : lastBrowsedYear;
 
   let body;
@@ -318,7 +336,7 @@ function insSubjects(){
 }
 function openSubjectsYear(year){ params.subjectsYear = year; lastBrowsedYear = year; renderApp(); }
 function openAddSubjectModal(year){
-  const mySections = DB.sections.filter(s=>s.instructorId===session.id && sectionInTerm(s, activeTerm().id) && s.yearLevel===year);
+  const mySections = (supabaseSectionsCache||[]).filter(s=>s.instructorId===session.id && s.yearLevel===year);
   openModal(`
   <div class="modal">
     <div class="modal-head"><h3>New subject — ${esc(year)}</h3><button class="modal-close" onclick="closeModal()" aria-label="Close">${icon('x')}</button></div>
@@ -330,27 +348,51 @@ function openAddSubjectModal(year){
       <div class="hint">No sections in ${esc(year)} yet — add one from the Class page first, then come back to add subjects.</div>
       `}
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveSubject('${esc(year)}')" ${mySections.length?'':'disabled'}>${icon('save')} Create subject</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="save-subject-btn" onclick="saveSubject('${esc(year)}')" ${mySections.length?'':'disabled'}>${icon('save')} Create subject</button></div>
   </div>`);
 }
-function saveSubject(year){
+async function saveSubject(year){
   const name = document.getElementById('f-subname').value.trim();
   if(!name){ showToast('Please name the subject.','err'); return; }
-  const mySections = DB.sections.filter(s=>s.instructorId===session.id && sectionInTerm(s, activeTerm().id) && s.yearLevel===year);
+  const mySections = (supabaseSectionsCache||[]).filter(s=>s.instructorId===session.id && s.yearLevel===year);
   if(!mySections.length){ showToast('No sections in this year yet.','err'); return; }
-  mySections.forEach(s=>{ DB.subjects.push({id:uid(), name, sectionId:s.id, instructorId:session.id}); });
-  persist('subjects'); closeModal();
+  const btn = document.getElementById('save-subject-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  let data;
+  try{
+    const resp = await fetch('/api/subjects/create', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, sectionIds: mySections.map(s=>s.id), instructorId: session.id}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showToast(data.error || 'Could not create the subject.','err'); btn.disabled=false; btn.textContent='Create subject'; return; }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.','err'); btn.disabled=false; btn.textContent='Create subject'; return;
+  }
+  supabaseSubjectsCache = null; // force a fresh fetch so the new subject shows up right away
+  closeModal();
   showToast(mySections.length>1 ? `Subject created in ${mySections.length} sections.` : 'Subject added.');
   renderApp();
 }
-function deleteSubject(id){
+async function deleteSubject(id){
   if(!confirm('Delete this subject and all its assessments?')) return;
+  let data;
+  try{
+    const resp = await fetch('/api/subjects/delete', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({id}),
+    });
+    data = await resp.json();
+    if(!resp.ok){ showToast(data.error || 'Could not delete the subject.','err'); return; }
+  } catch(e){
+    showToast('Could not reach the server. Check your connection and try again.','err'); return;
+  }
+  supabaseSubjectsCache = null; // force a fresh fetch so the deletion shows up right away
   const assessIds = DB.assessments.filter(a=>a.subjectId===id).map(a=>a.id);
-  DB.subjects = DB.subjects.filter(s=>s.id!==id);
   DB.assessments = DB.assessments.filter(a=>a.subjectId!==id);
   DB.submissions = DB.submissions.filter(s=>!assessIds.includes(s.assessmentId));
   DB.attendance = DB.attendance.filter(a=>a.subjectId!==id);
-  Promise.all(['subjects','assessments','submissions','attendance'].map(persist));
+  Promise.all(['assessments','submissions','attendance'].map(persist));
   showToast('Subject deleted.'); renderApp();
 }
 
