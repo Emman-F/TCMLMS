@@ -13,9 +13,11 @@
 // cache so the next render fetches fresh data instead of showing stale rows.
 let supabaseAccountsCache = null;
 let supabaseAccountsLoading = false;
+let supabaseAccountsLoadError = false;
 function loadAccountsFromServer(){
   if(supabaseAccountsLoading || supabaseAccountsCache!==null) return;
   supabaseAccountsLoading = true;
+  supabaseAccountsLoadError = false;
   fetch('/api/accounts/list', {cache: 'no-store'})
     .then(r=>r.json())
     .then(data=>{
@@ -24,9 +26,8 @@ function loadAccountsFromServer(){
       renderApp();
     })
     .catch(()=>{
-      supabaseAccountsCache = [];
       supabaseAccountsLoading = false;
-      showToast('Could not load accounts from the server.','err');
+      supabaseAccountsLoadError = true;
       renderApp();
     });
 }
@@ -207,6 +208,9 @@ async function saveAdminChangePassword(){
   showToast('Password updated.');
 }
 function adminDashboard(){
+  if(supabaseAccountsLoadError || supabaseSectionsLoadError){
+    return loadErrorBlock('supabaseAccountsCache=null;supabaseSectionsCache=null;supabaseAccountsLoadError=false;supabaseSectionsLoadError=false;renderApp();');
+  }
   if(supabaseAccountsCache===null || supabaseSectionsCache===null){
     loadAccountsFromServer();
     loadSectionsFromServer();
@@ -268,6 +272,9 @@ function filteredAccountsList(){
   return [...list].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
 }
 function adminAccounts(){
+  if(supabaseAccountsLoadError || supabaseSectionsLoadError){
+    return loadErrorBlock('supabaseAccountsCache=null;supabaseSectionsCache=null;supabaseAccountsLoadError=false;supabaseSectionsLoadError=false;renderApp();');
+  }
   if(supabaseAccountsCache===null || supabaseSectionsCache===null){
     loadAccountsFromServer();
     loadSectionsFromServer();
